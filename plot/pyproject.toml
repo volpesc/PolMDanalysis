@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name            = "mdplot"
+version         = "1.1.0"
+description     = "Plotting package for the MD Analysis Suite"
+readme          = "README.md"
+requires-python = ">=3.9"
+
+dependencies = [
+    "numpy>=1.21",
+    "matplotlib>=3.5",
+]
+
+[project.scripts]
+mdplot = "mdplot.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["mdplot*"]
