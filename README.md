@@ -7,7 +7,9 @@ A C++17 toolkit for analysing molecular dynamics trajectories of polymer systems
 ## Provenance
 
 I wrote and used these tools throughout my PhD (2022-2026) at MPIP Mainz, adding to them as the physics I was studying demanded. This repo is that work cleaned up, documented, and refactored into one codebase, published in 2026.
+
 AI assistance (Claude) was used for cleanup and documentation work; the underlying analysis code and physics are my own.
+
 ---
 ## Table of Contents
 
@@ -198,7 +200,7 @@ mpirun -np 4 ./analysis --tool msd \
 
 ---
 
-### msdfront: Front-Resolved Monomer MSD
+### `msdfront`: Front-Resolved Monomer MSD
 
 Splits g1(t) into two populations by each monomer's position relative to the
 instantaneous solvent GDS front, decided fresh at every time origin: swollen
@@ -210,14 +212,14 @@ tube-constraint crossover. Like msd, uses the inner 50% of each chain and is
 MPI-parallelised over time origins. Error bars are the standard error of the
 per-origin population-mean g1, across time origins.
 
-'''bash
+```bash
 mpirun -np 8 ./analysis --tool msdfront \
   --prefix requil_ --Nm 500 --Nc 1000 --Ns 2000000 \
   --start 0 --stop 50 --step 1 --dt 1.0 \
   --xmin 0 --xmax 100 --binw 3.0 \
   --frontbuf 2.0 --tmax 300 --nlog 40 \
   --out msd_front.dat
-'''
+```
 
 | Extra option | Default | Description |
 |---|---|---|
