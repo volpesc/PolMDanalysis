@@ -59,66 +59,74 @@ inline void computeMSD(const MSDConfig& cfg, const std::string& outputFile = "ms
     const int N  = cfg.Nm * cfg.Nc;
     const int M  = (cfg.frameStop - cfg.frameStart) / cfg.frameStep + 1;
 
-    float Lx{}, Ly{}, Lz{};
 
     if (world_rank == 0)
         std::cout << "===== Starting MSD (MPI ranks: " << world_size << ") =====\n";
 
     const auto wallStart = std::chrono::steady_clock::now();
 
-    // ── Allocate trajectory storage (rank 0 reads, then broadcasts) ──────────
+    // Raw (still PBC-wrapped) positions and per-frame box lengths, indexed
+    // by frame t. Frame t is read from disk by exactly one rank
+    // (round-robin ownership) and then broadcast to the rest, so the
+    // disk-I/O / text-parsing cost runs in parallel instead of falling on
+    // rank 0 alone.
     std::vector<std::vector<float>> rx(M, std::vector<float>(N));
     std::vector<std::vector<float>> ry(M, std::vector<float>(N));
     std::vector<std::vector<float>> rz(M, std::vector<float>(N));
+    std::vector<float> LxArr(M, 0.f), LyArr(M, 0.f), LzArr(M, 0.f);
+
+    if (world_rank == 0)
+        std::cout << "Reading " << M << " frames across " << world_size << " ranks...\n";
+
+    for (int t = 0; t < M; ++t) {
+        const int owner = t % world_size;
+        if (world_rank != owner) continue;
+
+        const int frameIdx = cfg.frameStart + t * cfg.frameStep;
+        int Ntmp;
+        float frameLx{}, frameLy{}, frameLz{};
+        const std::string fn = makeInputFilename(cfg.filenamePrefix, frameIdx);
+        readFrame(fn, cfg.Nm, cfg.Nc, rx[t], ry[t], rz[t], Ntmp, frameLx, frameLy, frameLz);
+        LxArr[t] = frameLx; LyArr[t] = frameLy; LzArr[t] = frameLz;
+    }
+
+    // ── Broadcast each frame from whichever rank actually read it ────────────
+    for (int t = 0; t < M; ++t) {
+        const int owner = t % world_size;
+        MPI_Bcast(rx[t].data(), N, MPI_FLOAT, owner, MPI_COMM_WORLD);
+        MPI_Bcast(ry[t].data(), N, MPI_FLOAT, owner, MPI_COMM_WORLD);
+        MPI_Bcast(rz[t].data(), N, MPI_FLOAT, owner, MPI_COMM_WORLD);
+        MPI_Bcast(&LxArr[t], 1, MPI_FLOAT, owner, MPI_COMM_WORLD);
+        MPI_Bcast(&LyArr[t], 1, MPI_FLOAT, owner, MPI_COMM_WORLD);
+        MPI_Bcast(&LzArr[t], 1, MPI_FLOAT, owner, MPI_COMM_WORLD);
+    }
+
+    if (world_rank == 0) std::cout << "Read complete. Unwrapping...\n";
+
+    // ── Sequential unwrap pass, plus per-frame CoMs ───────────────────────────
+    // Unwrap is O(N) per frame (cheap vs. disk I/O), so every rank just
+    // redoes it locally on the now-fully-populated raw data instead of
+    // broadcasting pre-unwrapped results from one rank. CoM has no
+    // cross-frame dependency either, so it's computed redundantly per rank
+    // here too, saving what used to be a separate broadcast round.
     std::vector<std::vector<float>> cx(M, std::vector<float>(cfg.Nc, 0.f));
     std::vector<std::vector<float>> cy(M, std::vector<float>(cfg.Nc, 0.f));
     std::vector<std::vector<float>> cz(M, std::vector<float>(cfg.Nc, 0.f));
     std::vector<float> scx(M, 0.f), scy(M, 0.f), scz(M, 0.f);
 
-    if (world_rank == 0) {
-        int t = 0;
-        for (int i = cfg.frameStart; i <= cfg.frameStop; i += cfg.frameStep) {
-            int Ntmp;
-            const std::string fn = makeInputFilename(cfg.filenamePrefix, i);
-            readFrame(fn, cfg.Nm, cfg.Nc, rx[t], ry[t], rz[t], Ntmp, Lx, Ly, Lz);
-
-            if (t == 0) {
-                // Make each chain contiguous in the first frame: the raw
-                // snapshot has PBC-wrapped coordinates, so a chain that
-                // straddles a boundary would otherwise give a bogus CoM.
-                unwrapChains(rx[t], ry[t], rz[t], cfg.Nm, cfg.Nc, N, Lx, Ly, Lz);
-            } else {
-                // Temporal unwrap: keep every particle's trajectory continuous
-                // across frames. Raw frames are independently PBC-wrapped, so
-                // without this a particle crossing a boundary between t-1 and
-                // t would show a spurious +-L jump in g1/g2/g3.
-                for (int p = 0; p < N; ++p) {
-                    rx[t][p] -= Lx * std::round((rx[t][p]-rx[t-1][p]) / Lx);
-                    ry[t][p] -= Ly * std::round((ry[t][p]-ry[t-1][p]) / Ly);
-                    rz[t][p] -= Lz * std::round((rz[t][p]-rz[t-1][p]) / Lz);
-                }
-            }
-
-            computeSystemCoM(cfg.Nm, cfg.Nc, rx[t], ry[t], rz[t], N, scx[t], scy[t], scz[t]);
-            computeCoM      (cfg.Nm, cfg.Nc, rx[t], ry[t], rz[t], cx[t], cy[t], cz[t]);
-            printProgress("Reading trajectory", cfg.frameStop + 1, i);
-            ++t;
+    unwrapChains(rx[0], ry[0], rz[0], cfg.Nm, cfg.Nc, N, LxArr[0], LyArr[0], LzArr[0]);
+    for (int t = 1; t < M; ++t) {
+        for (int p = 0; p < N; ++p) {
+            rx[t][p] -= LxArr[t] * std::round((rx[t][p]-rx[t-1][p]) / LxArr[t]);
+            ry[t][p] -= LyArr[t] * std::round((ry[t][p]-ry[t-1][p]) / LyArr[t]);
+            rz[t][p] -= LzArr[t] * std::round((rz[t][p]-rz[t-1][p]) / LzArr[t]);
         }
-        std::cout << "\n============================= 100%\n";
+    }
+    for (int t = 0; t < M; ++t) {
+        computeSystemCoM(cfg.Nm, cfg.Nc, rx[t], ry[t], rz[t], N, scx[t], scy[t], scz[t]);
+        computeCoM      (cfg.Nm, cfg.Nc, rx[t], ry[t], rz[t], cx[t], cy[t], cz[t]);
     }
 
-    // ── Broadcast all trajectory data ─────────────────────────────────────────
-    for (int t = 0; t < M; ++t) {
-        MPI_Bcast(rx[t].data(), N,       MPI_FLOAT, 0, MPI_COMM_WORLD);
-        MPI_Bcast(ry[t].data(), N,       MPI_FLOAT, 0, MPI_COMM_WORLD);
-        MPI_Bcast(rz[t].data(), N,       MPI_FLOAT, 0, MPI_COMM_WORLD);
-        MPI_Bcast(cx[t].data(), cfg.Nc,  MPI_FLOAT, 0, MPI_COMM_WORLD);
-        MPI_Bcast(cy[t].data(), cfg.Nc,  MPI_FLOAT, 0, MPI_COMM_WORLD);
-        MPI_Bcast(cz[t].data(), cfg.Nc,  MPI_FLOAT, 0, MPI_COMM_WORLD);
-    }
-    MPI_Bcast(scx.data(), M, MPI_FLOAT, 0, MPI_COMM_WORLD);
-    MPI_Bcast(scy.data(), M, MPI_FLOAT, 0, MPI_COMM_WORLD);
-    MPI_Bcast(scz.data(), M, MPI_FLOAT, 0, MPI_COMM_WORLD);
 
     // ── Distribute time origins across ranks ──────────────────────────────────
     const int chunk     = M / world_size;

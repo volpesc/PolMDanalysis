@@ -93,6 +93,10 @@ inline void computeMSDFront(const MSDFrontConfig& cfg,
     const int nBins = static_cast<int>((cfg.xMax - cfg.xMin) / cfg.binWidth);
 
     if (world_rank == 0)
+        std::cout << "===== Starting front-resolved MSD (MPI ranks: " << world_size << ") =====\n";
+
+    const auto wallStart = std::chrono::steady_clock::now();
+
     // Raw (still PBC-wrapped) polymer positions, per-frame box lengths, and
     // the GDS front, all indexed by frame t. Frame t is read from disk by
     // exactly one rank (round-robin ownership) and then broadcast to the
@@ -100,6 +104,8 @@ inline void computeMSDFront(const MSDFrontConfig& cfg,
     // large solvent-laden frames -- runs in parallel instead of falling on
     // rank 0 alone.
     std::vector<std::vector<float>> rx(M, std::vector<float>(Np));
+    std::vector<std::vector<float>> ry(M, std::vector<float>(Np));
+    std::vector<std::vector<float>> rz(M, std::vector<float>(Np));
     std::vector<float> LxArr(M, 0.f), LyArr(M, 0.f), LzArr(M, 0.f);
     std::vector<float> frontPos(M, -1.f);
 
@@ -156,6 +162,8 @@ inline void computeMSDFront(const MSDFrontConfig& cfg,
             rz[t][p] -= LzArr[t] * std::round((rz[t][p]-rz[t-1][p]) / LzArr[t]);
         }
     }
+
+
     // ── Log-spaced lags, bounded by both available frames and --tmax ─────────
     const int maxLagByFrames = M - 1;
     const int maxLagByTime   = static_cast<int>(cfg.tMax / (cfg.timeStep * cfg.frameStep));
