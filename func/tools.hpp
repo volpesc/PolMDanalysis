@@ -23,6 +23,7 @@
 #include "pressure_z_mpi.hpp"
 #include "rdf.hpp"
 #include "density.hpp"
+#include "density_front.hpp"
 #include "endtoend.hpp"
 #include "bond_angle.hpp"
 #include "ppa.hpp"
@@ -72,9 +73,6 @@ public:
     }
 };
 inline const Register<MSDFrontAnalysis> reg_msdfront{"msdfront"};
-
-
-
 
 inline const Register<GyrAnalysis> reg_gyr{"gyr"};
 
@@ -172,6 +170,20 @@ public:
     }
 };
 inline const Register<SpecDensityAnalysis> reg_specdensity{"specdensity"};
+
+
+class DensityFrontAnalysis : public Analysis {
+public:
+    void run(const Args& a) const override {
+        DensityFrontConfig c;
+        c.filenamePrefix = a.prefix; c.Nm = a.Nm; c.Nc = a.Nc; c.Ns = a.Ns;
+        c.nBins = a.nBins; c.deltaT = a.dt; c.frame0 = a.frame0;
+        c.atFrames = a.atFrames; c.frontWindow = a.frontWindow;
+        computeDensityFront(c, a.out.empty() ? "densityfront" : a.out);
+    }
+};
+inline const Register<DensityFrontAnalysis> reg_densityfront{"densityfront"};
+
 
 // ── Mechanics / energy ────────────────────────────────────────────────────────
 

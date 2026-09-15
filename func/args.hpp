@@ -35,6 +35,10 @@ struct Args {
     int    nLayer    {120};
     float  rCut      {5.0f};
     double lambda    {1.0};
+    // Density-front snapshots
+    std::vector<int> atFrames;
+    int    frame0      {0};
+    int    frontWindow {5};
     // Backbone
     std::string bbMode{"full"};
     double stretchX{1.0}, stretchY{0.0}, stretchZ{0.0};
@@ -93,6 +97,14 @@ Args parseArgs(int argc, char** argv) {
         else if (f=="--dkmult") a.dkMult   = std::stof(nextArg(i,argc,argv,f));
         else if (f=="--bintol") a.binTol   = std::stof(nextArg(i,argc,argv,f));
         else if (f=="--Ns")     a.Ns       = std::stoi(nextArg(i,argc,argv,f));
+        else if (f=="--atframes") {
+            std::string list = nextArg(i,argc,argv,f);
+            std::stringstream ss(list);
+            std::string tok;
+            while (std::getline(ss, tok, ',')) a.atFrames.push_back(std::stoi(tok));
+        }
+        else if (f=="--frame0")      a.frame0      = std::stoi(nextArg(i,argc,argv,f));
+        else if (f=="--frontwindow") a.frontWindow = std::stoi(nextArg(i,argc,argv,f));
         else if (f=="--nlayer") a.nLayer   = std::stoi(nextArg(i,argc,argv,f));
         else if (f=="--rcut")   a.rCut     = std::stof(nextArg(i,argc,argv,f));
         else if (f=="--lambda") a.lambda   = std::stod(nextArg(i,argc,argv,f));
