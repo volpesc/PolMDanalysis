@@ -92,63 +92,70 @@ inline void computeMSDFront(const MSDFrontConfig& cfg,
     const int M     = (cfg.frameStop - cfg.frameStart) / cfg.frameStep + 1;
     const int nBins = static_cast<int>((cfg.xMax - cfg.xMin) / cfg.binWidth);
 
-    float Lx{}, Ly{}, Lz{};
+    if (world_rank == 0)
+    // Raw (still PBC-wrapped) polymer positions, per-frame box lengths, and
+    // the GDS front, all indexed by frame t. Frame t is read from disk by
+    // exactly one rank (round-robin ownership) and then broadcast to the
+    // rest, so the disk-I/O / text-parsing cost -- the real bottleneck for
+    // large solvent-laden frames -- runs in parallel instead of falling on
+    // rank 0 alone.
+    std::vector<std::vector<float>> rx(M, std::vector<float>(Np));
+    std::vector<float> LxArr(M, 0.f), LyArr(M, 0.f), LzArr(M, 0.f);
+    std::vector<float> frontPos(M, -1.f);
 
     if (world_rank == 0)
-        std::cout << "===== Starting front-resolved MSD (MPI ranks: " << world_size << ") =====\n";
+        std::cout << "Reading " << M << " frames across " << world_size << " ranks...\n";
 
-    const auto wallStart = std::chrono::steady_clock::now();
-
-    // ── Allocate trajectory storage (rank 0 reads, then broadcasts) ──────────
-    std::vector<std::vector<float>> rx(M, std::vector<float>(Np));
-    std::vector<std::vector<float>> ry(M, std::vector<float>(Np));
-    std::vector<std::vector<float>> rz(M, std::vector<float>(Np));
-    std::vector<float> frontPos(M, -1.f);   // GDS solvent front at each origin frame
-
-    if (world_rank == 0) {
-        int t = 0;
-        for (int i = cfg.frameStart; i <= cfg.frameStop; i += cfg.frameStep) {
-            int Ntot;
-            std::vector<float> fx, fy, fz;
-            const std::string fn = makeInputFilename(cfg.filenamePrefix, i);
-            readFrame(fn, cfg.Nm, cfg.Nc, fx, fy, fz, Ntot, Lx, Ly, Lz, Species::Both);
-
-            for (int p = 0; p < Np; ++p) { rx[t][p] = fx[p]; ry[t][p] = fy[p]; rz[t][p] = fz[p]; }
-
-            if (t == 0) {
-                unwrapChains(rx[t], ry[t], rz[t], cfg.Nm, cfg.Nc, Np, Lx, Ly, Lz);
-            } else {
-                for (int p = 0; p < Np; ++p) {
-                    rx[t][p] -= Lx * std::round((rx[t][p]-rx[t-1][p]) / Lx);
-                    ry[t][p] -= Ly * std::round((ry[t][p]-ry[t-1][p]) / Ly);
-                    rz[t][p] -= Lz * std::round((rz[t][p]-rz[t-1][p]) / Lz);
-                }
-            }
-
-            // Instantaneous solvent GDS front from raw (still PBC-wrapped)
-            // positions -- same convention as gds_diffusion.hpp.
-            std::vector<double> solvProfile(nBins, 0.0);
-            for (int p = Np; p < Np + cfg.Ns && p < Ntot; ++p) {
-                const int bin = static_cast<int>((fx[p] - cfg.xMin) / cfg.binWidth);
-                if (bin >= 0 && bin < nBins) solvProfile[bin] += 1.0;
-            }
-            frontPos[t] = static_cast<float>(
-                detail::gibbsDividingSurface(solvProfile, cfg.binWidth, cfg.xMin));
-
-            printProgress("Reading trajectory", cfg.frameStop + 1, i);
-            ++t;
-        }
-        std::cout << "\n============================= 100%\n";
-    }
-
-    // ── Broadcast ──────────────────────────────────────────────────────────────
     for (int t = 0; t < M; ++t) {
-        MPI_Bcast(rx[t].data(), Np, MPI_FLOAT, 0, MPI_COMM_WORLD);
-        MPI_Bcast(ry[t].data(), Np, MPI_FLOAT, 0, MPI_COMM_WORLD);
-        MPI_Bcast(rz[t].data(), Np, MPI_FLOAT, 0, MPI_COMM_WORLD);
-    }
-    MPI_Bcast(frontPos.data(), M, MPI_FLOAT, 0, MPI_COMM_WORLD);
+        const int owner = t % world_size;
+        if (world_rank != owner) continue;
 
+        const int frameIdx = cfg.frameStart + t * cfg.frameStep;
+        int Ntot;
+        float frameLx{}, frameLy{}, frameLz{};
+        std::vector<float> fx, fy, fz;
+        const std::string fn = makeInputFilename(cfg.filenamePrefix, frameIdx);
+        readFrame(fn, cfg.Nm, cfg.Nc, fx, fy, fz, Ntot, frameLx, frameLy, frameLz, Species::Both);
+
+        for (int p = 0; p < Np; ++p) { rx[t][p] = fx[p]; ry[t][p] = fy[p]; rz[t][p] = fz[p]; }
+        LxArr[t] = frameLx; LyArr[t] = frameLy; LzArr[t] = frameLz;
+
+        // Instantaneous solvent GDS front from raw (still PBC-wrapped)
+        // positions -- same convention as gds_diffusion.hpp.
+        std::vector<double> solvProfile(nBins, 0.0);
+        for (int p = Np; p < Np + cfg.Ns && p < Ntot; ++p) {
+            const int bin = static_cast<int>((fx[p] - cfg.xMin) / cfg.binWidth);
+            if (bin >= 0 && bin < nBins) solvProfile[bin] += 1.0;
+        }
+        frontPos[t] = static_cast<float>(
+            detail::gibbsDividingSurface(solvProfile, cfg.binWidth, cfg.xMin));
+    }
+
+    // ── Broadcast each frame from whichever rank actually read it ────────────
+    for (int t = 0; t < M; ++t) {
+        const int owner = t % world_size;
+        MPI_Bcast(rx[t].data(), Np, MPI_FLOAT, owner, MPI_COMM_WORLD);
+        MPI_Bcast(ry[t].data(), Np, MPI_FLOAT, owner, MPI_COMM_WORLD);
+        MPI_Bcast(rz[t].data(), Np, MPI_FLOAT, owner, MPI_COMM_WORLD);
+        MPI_Bcast(&LxArr[t], 1, MPI_FLOAT, owner, MPI_COMM_WORLD);
+        MPI_Bcast(&LyArr[t], 1, MPI_FLOAT, owner, MPI_COMM_WORLD);
+        MPI_Bcast(&LzArr[t], 1, MPI_FLOAT, owner, MPI_COMM_WORLD);
+        MPI_Bcast(&frontPos[t], 1, MPI_FLOAT, owner, MPI_COMM_WORLD);
+    }
+
+    if (world_rank == 0) std::cout << "Read complete. Unwrapping...\n";
+
+    // ── Sequential unwrap pass ────────────────────────────────────────────────
+    // Cheap (O(Np) per frame) compared to disk I/O, so every rank just redoes
+    // it locally on the now-fully-populated raw data.
+    unwrapChains(rx[0], ry[0], rz[0], cfg.Nm, cfg.Nc, Np, LxArr[0], LyArr[0], LzArr[0]);
+    for (int t = 1; t < M; ++t) {
+        for (int p = 0; p < Np; ++p) {
+            rx[t][p] -= LxArr[t] * std::round((rx[t][p]-rx[t-1][p]) / LxArr[t]);
+            ry[t][p] -= LyArr[t] * std::round((ry[t][p]-ry[t-1][p]) / LyArr[t]);
+            rz[t][p] -= LzArr[t] * std::round((rz[t][p]-rz[t-1][p]) / LzArr[t]);
+        }
+    }
     // ── Log-spaced lags, bounded by both available frames and --tmax ─────────
     const int maxLagByFrames = M - 1;
     const int maxLagByTime   = static_cast<int>(cfg.tMax / (cfg.timeStep * cfg.frameStep));
