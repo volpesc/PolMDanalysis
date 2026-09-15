@@ -57,6 +57,11 @@ struct Args {
     double cBuffer   {10.0};
     int    minBin    {2};
     int    maxBin    {90};
+    // MSD front-resolved
+    double frontBuffer{2.0};
+    double tMax       {300.0};
+    int    nLogPoints {40};
+
 };
 
 inline std::string nextArg(int& i, int argc, char** argv, const std::string& f) {
@@ -104,6 +109,9 @@ Args parseArgs(int argc, char** argv) {
         else if (f=="--threads")  a.threads  = std::stoi(nextArg(i,argc,argv,f));
         else if (f=="--xmin")    a.xMin     = std::stod(nextArg(i,argc,argv,f));
         else if (f=="--xmax")    a.xMax     = std::stod(nextArg(i,argc,argv,f));
+        else if (f=="--frontbuf") a.frontBuffer = std::stod(nextArg(i,argc,argv,f));
+        else if (f=="--tmax")     a.tMax        = std::stod(nextArg(i,argc,argv,f));
+        else if (f=="--nlog")     a.nLogPoints  = std::stoi(nextArg(i,argc,argv,f));
         else if (f=="--xthresh") a.xThresh  = std::stod(nextArg(i,argc,argv,f));
         else if (f=="--vthresh") a.vThresh  = std::stod(nextArg(i,argc,argv,f));
         else if (f=="--percentile") a.percentile = std::stod(nextArg(i,argc,argv,f));

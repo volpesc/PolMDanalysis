@@ -5,6 +5,7 @@ Re-exports all observable plot functions.
 """
 
 from .msd           import plot_msd
+from .msd_front     import plot_msd_front
 from .gyr           import plot_gyr
 from .msid          import plot_msid
 from .rdf           import plot_rdf
@@ -26,7 +27,7 @@ from .force_ellipsoid import (plot_force_ellipsoid, plot_force_magnitude,
                                load_force_ellipsoid)
 
 __all__ = [
-    "plot_msd","plot_gyr","plot_msid","plot_rdf","plot_density",
+    "plot_msd_front", "plot_msd","plot_gyr","plot_msid","plot_rdf","plot_density",
     "plot_endtoend","plot_endtoend_time","plot_endtoend_hist",
     "plot_bondangle","plot_bondangle_both",
     "plot_sq","plot_pressure","surface_tension",

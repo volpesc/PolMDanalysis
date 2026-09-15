@@ -18,6 +18,7 @@
 #include "msd_mpi.hpp"
 #include "gyr_endz.hpp"
 #include "msid.hpp"
+#include "msd_front.hpp"
 #include "structure_factor.hpp"
 #include "pressure_z_mpi.hpp"
 #include "rdf.hpp"
@@ -57,6 +58,24 @@ public:
             a.out.empty()?"rg_profile.dat":a.out,a.Nm,a.Nc,a.binWidth,a.nBins);
     }
 };
+
+class MSDFrontAnalysis : public Analysis {  // MPI-parallel over time origins
+public:
+    bool runsOnAllRanks() const override { return true; }
+    void run(const Args& a) const override {
+        MSDFrontConfig c; c.filenamePrefix=a.prefix; c.frameStart=a.start;
+        c.frameStop=a.stop; c.frameStep=a.step; c.timeStep=a.dt;
+        c.Nm=a.Nm; c.Nc=a.Nc; c.Ns=a.Ns;
+        c.xMin=a.xMin; c.xMax=a.xMax; c.binWidth=a.binWidth;
+        c.frontBuffer=a.frontBuffer; c.tMax=a.tMax; c.nLogPoints=a.nLogPoints;
+        computeMSDFront(c, a.out.empty()?"msd_front.dat":a.out);
+    }
+};
+inline const Register<MSDFrontAnalysis> reg_msdfront{"msdfront"};
+
+
+
+
 inline const Register<GyrAnalysis> reg_gyr{"gyr"};
 
 class MSIDAnalysis : public Analysis {

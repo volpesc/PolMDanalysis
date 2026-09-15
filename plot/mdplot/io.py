@@ -31,6 +31,11 @@ def load_msd(path: str | Path) -> Dict[str, np.ndarray]:
     d = _load(path, 4)
     return {"t": d[:, 0], "g1": d[:, 1], "g2": d[:, 2], "g3": d[:, 3]}
 
+def load_msd_front(path: str | Path) -> Dict[str, np.ndarray]:
+    """Load front-resolved MSD output. Columns: t  g1_swollen  err_swollen  g1_dry  err_dry"""
+    d = _load(path, 5)
+    return {"t": d[:, 0], "g1_swollen": d[:, 1], "err_swollen": d[:, 2],
+            "g1_dry": d[:, 3], "err_dry": d[:, 4]}
 
 def load_gyr(path: str | Path) -> Dict[str, np.ndarray]:
     """Load gyration radius profile.  Columns: x  rgx  rgy  rgz  rgtot"""

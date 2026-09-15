@@ -40,6 +40,20 @@ Plot Mean Squared Displacement g1(t), g2(t), g3(t).
   Example:
     mdplot --tool msd msd.dat --loglog --slopes --out msd_loglog.pdf
 """,
+
+    "msdfront": """
+Plot front-resolved monomer MSD g1_swollen(t), g1_dry(t).
+
+  Input:  msd_front.dat  (columns: t  g1_swollen  err_swollen  g1_dry  err_dry)
+  Flags:  --loglog       Log-log axes
+          --slopes       Overlay t¹ and t^0.5 reference lines (requires --loglog)
+          --out FILE     Output path  [msd_front.pdf]
+
+  Example:
+    mdplot --tool msdfront msd_front.dat --loglog --slopes --out msd_front.pdf
+""",
+
+
     "gyr": """
 Plot gyration radius profile <Rg²(x)>.
 
@@ -141,6 +155,7 @@ USAGE
 
 AVAILABLE TOOLS
   msd         Mean Squared Displacement g1, g2, g3
+  msdfront    Front-resolved monomer MSD (swollen vs. dry region)
   gyr         Gyration radius profile <Rg²(x)>
   msid        Mean Squared Internal Distance C(s)
   rdf         Radial distribution function g(r)
@@ -208,6 +223,14 @@ def handle_msd(args) -> None:
     fig, ax = style.figure()
     obs.plot_msd(data, ax=ax, loglog=args.loglog, show_slopes=args.slopes)
     style.save(fig, args.out or "msd.pdf")
+
+
+def handle_msdfront(args) -> None:
+    _require(args.inputs, 1, "msdfront")
+    data = io.load_msd_front(args.inputs[0])
+    fig, ax = style.figure()
+    obs.plot_msd_front(data, ax=ax, loglog=args.loglog, show_slopes=args.slopes)
+    style.save(fig, args.out or "msd_front.pdf")
 
 
 def handle_gyr(args) -> None:
@@ -306,6 +329,7 @@ def handle_pressure(args) -> None:
 
 HANDLERS = {
     "msd":       handle_msd,
+    "msdfront":  handle_msdfront,
     "gyr":       handle_gyr,
     "msid":      handle_msid,
     "rdf":       handle_rdf,

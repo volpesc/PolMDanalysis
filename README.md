@@ -7,7 +7,7 @@ A C++17 toolkit for analysing molecular dynamics trajectories of polymer systems
 ## Provenance
 
 I wrote and used these tools throughout my PhD (2022-2026) at MPIP Mainz, adding to them as the physics I was studying demanded. This repo is that work cleaned up, documented, and refactored into one codebase, published in 2026.
-
+AI assistance (Claude) was used for cleanup and documentation work; the underlying analysis code and physics are my own.
 ---
 ## Table of Contents
 
@@ -38,6 +38,7 @@ I wrote and used these tools throughout my PhD (2022-2026) at MPIP Mainz, adding
 | Observable | Tool flag | Parallelism |
 |---|---|---|
 | Mean Squared Displacement g₁(t), g₂(t), g₃(t) | `--tool msd` | MPI |
+| Front-resolved monomer MSD g1_swollen(t), g1_dry(t) | `--tool msdfront` | MPI |
 | Gyration radius spatial profile ⟨Rg²(x)⟩ | `--tool gyr` | single |
 | Mean Squared Internal Distance C(s) | `--tool msid` | single |
 | End-to-end distance ⟨Re²⟩ and P(Re²) | `--tool endtoend` | single |
@@ -194,6 +195,39 @@ mpirun -np 4 ./analysis --tool msd \
 | `--dt` | `50.0` | Physical time between frames [τ] |
 
 **Output:** `t  g1(t)  g2(t)  g3(t)`
+
+---
+
+### msdfront: Front-Resolved Monomer MSD
+
+Splits g1(t) into two populations by each monomer's position relative to the
+instantaneous solvent GDS front, decided fresh at every time origin: swollen
+(behind the front, solvent-penetrated) and dry (ahead of the front,
+unpenetrated/glassy). A buffer zone straddling the front excludes
+ambiguously-placed monomers. Lags are log-spaced and capped by --tmax,
+keeping this cheap and focused on early-time diffusion, before the
+tube-constraint crossover. Like msd, uses the inner 50% of each chain and is
+MPI-parallelised over time origins. Error bars are the standard error of the
+per-origin population-mean g1, across time origins.
+
+'''bash
+mpirun -np 8 ./analysis --tool msdfront \
+  --prefix requil_ --Nm 500 --Nc 1000 --Ns 2000000 \
+  --start 0 --stop 50 --step 1 --dt 1.0 \
+  --xmin 0 --xmax 100 --binw 3.0 \
+  --frontbuf 2.0 --tmax 300 --nlog 40 \
+  --out msd_front.dat
+'''
+
+| Extra option | Default | Description |
+|---|---|---|
+| '--frontbuf' | '2.0' | Exclusion half-width straddling the front [sigma] |
+| '--tmax' | '300.0' | Max lag time reported [τ] |
+| '--nlog' | '40' | Number of log-spaced output lag points |
+
+**Output:** 't [τ]  g1_swollen[σ^2]  err  g1_dry[σ^2]  err'
+
+
 
 ---
 
@@ -526,6 +560,7 @@ pip install -e .
 
 ```bash
 mdplot --tool msd        msd.dat --loglog --slopes
+mdplot --tool msdfront   msd_front.dat --loglog --slopes
 mdplot --tool gyr        rg_profile.dat --components
 mdplot --tool msid       msid.dat
 mdplot --tool endtoend   endtoend --theory
@@ -638,6 +673,7 @@ PolMDanalysis/
 │   │
 │   │   ── Structural / Conformational ──────────────────────────────────────
 │   ├── msd_mpi.hpp           # MSD g1, g2, g3  (MPI)
+│   ├── msd_front.hpp         # Front resolved MSD g1_swollen, g2_dry  (MPI)
 │   ├── gyr_endz.hpp          # Gyration radius profile ⟨Rg²(x)⟩
 │   ├── msid.hpp              # Mean Squared Internal Distance C(s)
 │   ├── endtoend.hpp          # End-to-end distance ⟨Re²⟩, P(Re²)
@@ -677,6 +713,7 @@ PolMDanalysis/
         ├── cli.py            # `mdplot` CLI entry point
         └── observables/      # One plot function (or module) per observable
             ├── msd.py        # plot_msd()
+            ├── msd_front.py  # plot_msd_front()
             ├── gyr.py        # plot_gyr()
             ├── msid.py       # plot_msid()
             ├── endtoend.py   # plot_endtoend(), plot_endtoend_time/hist()
