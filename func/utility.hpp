@@ -169,9 +169,16 @@ enum class Species { Polymer, Solvent, Both };
 /**
  * @brief Read positions from an XYZ-format trajectory frame.
  *
- * File layout: a header "N Lx Ly Lz", then N atom lines
- * "id type x y z vx vy vz", with the Nm*Nc polymer atoms first and any
- * solvent atoms after them.
+ * File layout: a header "N Lx Ly Lz" (N and the box dimensions may be on
+ * one line or split across two -- whitespace-separated token extraction
+ * doesn't care), then N atom lines. Each atom line is either
+ * "id type x y z vx vy vz" (8 columns) or "id x y z vx vy vz" (7 columns,
+ * no type field); the format is auto-detected from the first atom line
+ * and assumed uniform for the rest of the file, so files from dump
+ * scripts that omit the type column work without any extra flag. The
+ * "type" column, when present, is read but never used elsewhere in this
+ * codebase -- species are inferred purely from index (polymer occupies
+ * [0, Nm*Nc), solvent occupies [Nm*Nc, N)).
  *
  * The position arrays are always sized to the full frame (N) and atoms are
  * stored at their absolute indices; @p which only selects which block(s) are
@@ -181,7 +188,8 @@ enum class Species { Polymer, Solvent, Both };
  *
  * @param which  Polymer (default), Solvent, or Both.
  * @throws std::runtime_error if the file cannot be opened, has a bad header,
- *         or ends before the requested atoms are read.
+ *         has an atom line whose column count is neither 7 nor 8, or ends
+ *         before the requested atoms are read.
  */
 inline void readFrame(const std::string& filename,
                       int Nm, int Nc,
@@ -201,16 +209,45 @@ inline void readFrame(const std::string& filename,
     const int begin = (which == Species::Solvent) ? Np : 0;  // first atom to store
     const int end   = (which == Species::Polymer) ? Np : N;  // one past the last
 
-    std::string skip;
-    for (int i = 0; i < begin; ++i)                          // advance past unread atoms
-        fi >> skip >> skip >> skip >> skip >> skip >> skip >> skip >> skip;
+    if (N == 0) return;
 
-    for (int i = begin; i < end; ++i) {
-        fi >> skip >> skip >> rx[i] >> ry[i] >> rz[i] >> skip >> skip >> skip;
-        if (!fi)
-            throw std::runtime_error("readFrame(): unexpected end of " + filename);
+    // Reach the true start of the first atom line (handles a header split
+    // across one or two physical lines), then peek its column count.
+    std::string restOfHeaderLine;
+    std::getline(fi, restOfHeaderLine);
+    const std::streampos firstAtomPos = fi.tellg();
+
+    std::string firstAtomLine;
+    std::getline(fi, firstAtomLine);
+    std::istringstream iss(firstAtomLine);
+    int nTok = 0;
+    for (std::string tmp; iss >> tmp; ) ++nTok;
+    if (nTok != 7 && nTok != 8)
+        throw std::runtime_error("readFrame(): unexpected atom line format (" +
+            std::to_string(nTok) + " columns, expected 7 or 8) in " + filename);
+    const bool hasType = (nTok == 8);
+    fi.seekg(firstAtomPos);   // rewind so the real read loop below sees this line too
+
+    std::string skip;
+    if (hasType) {
+        for (int i = 0; i < begin; ++i)                          // advance past unread atoms
+            fi >> skip >> skip >> skip >> skip >> skip >> skip >> skip >> skip;
+        for (int i = begin; i < end; ++i) {
+            fi >> skip >> skip >> rx[i] >> ry[i] >> rz[i] >> skip >> skip >> skip;
+            if (!fi)
+                throw std::runtime_error("readFrame(): unexpected end of " + filename);
+        }
+    } else {
+        for (int i = 0; i < begin; ++i)
+            fi >> skip >> skip >> skip >> skip >> skip >> skip >> skip;
+        for (int i = begin; i < end; ++i) {
+            fi >> skip >> rx[i] >> ry[i] >> rz[i] >> skip >> skip >> skip;
+            if (!fi)
+                throw std::runtime_error("readFrame(): unexpected end of " + filename);
+        }
     }
 }
+
 
 /// Read only the header of an XYZ file (N, box dimensions).
 inline void readHeader(const std::string& filename,
