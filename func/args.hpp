@@ -10,6 +10,8 @@
 
 #include <string>
 #include <stdexcept>
+#include <vector>
+#include <sstream>
 
 namespace md {
 
