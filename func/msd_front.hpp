@@ -93,6 +93,9 @@ inline void computeMSDFront(const MSDFrontConfig& cfg,
     const int nBins = static_cast<int>((cfg.xMax - cfg.xMin) / cfg.binWidth);
 
     if (world_rank == 0)
+	std::cout.setf(std::ios::unitbuf);
+
+    if (world_rank == 0)
         std::cout << "===== Starting front-resolved MSD (MPI ranks: " << world_size << ") =====\n";
 
     const auto wallStart = std::chrono::steady_clock::now();
@@ -175,9 +178,9 @@ inline void computeMSDFront(const MSDFrontConfig& cfg,
     const int innerEnd   = cfg.Nm - cfg.Nm / 4;
 
     // ── Distribute time origins across ranks ──────────────────────────────────
-    const int chunk    = M / world_size;
-    const int startIdx = world_rank * chunk;
-    const int endIdx   = (world_rank == world_size - 1) ? M : startIdx + chunk;
+    //const int chunk    = M / world_size;
+    //const int startIdx = world_rank * chunk;
+    //const int endIdx   = (world_rank == world_size - 1) ? M : startIdx + chunk;
 
     enum Pop { SWOLLEN = 0, DRY = 1, NPOP = 2 };
     // Per-lag, per-population accumulators over ORIGINS (not monomers): each
@@ -185,7 +188,7 @@ inline void computeMSDFront(const MSDFrontConfig& cfg,
     // mean-of-means and its standard error across origins.
     std::vector<double> sumM (L*NPOP, 0.0), sumM2(L*NPOP, 0.0), nOrig(L*NPOP, 0.0);
 
-    for (int t0 = startIdx; t0 < endIdx; ++t0) {
+    for (int t0 = world_rank; t0 < M; t0+=world_size) {
         if (frontPos[t0] < 0.f) continue;   // GDS front not found at this origin
         const float xf = frontPos[t0];
 
@@ -248,7 +251,7 @@ inline void computeMSDFront(const MSDFrontConfig& cfg,
                 if (n > 1.5) {
                     const double var = std::max((sumM2[li*NPOP+p] - n*mean*mean) / (n - 1.0), 0.0);
                     err[p] = std::sqrt(var / n);
-                } else {
+               } else {
                     err[p] = 0.0;
                 }
             }
