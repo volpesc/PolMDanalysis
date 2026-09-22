@@ -16,6 +16,7 @@
 
 #include "utility.hpp"
 #include "msd_mpi.hpp"
+#include "msd_dose.hpp"
 #include "gyr_endz.hpp"
 #include "msid.hpp"
 #include "msd_front.hpp"
@@ -73,6 +74,25 @@ public:
     }
 };
 inline const Register<MSDFrontAnalysis> reg_msdfront{"msdfront"};
+
+
+class MSDDoseAnalysis : public Analysis {  // MPI-parallel over (t0,dt) tasks
+public:
+	bool runsOnAllRanks() const override { return true; }
+	void run(const Args& a) const override {
+		MSDDoseConfig c; c.filenamePrefix=a.prefix; c.frameStart=a.start;
+		c.frameStop=a.stop; c.frameStep=a.step; c.timeStep=a.dt;
+		c.Nm=a.Nm; c.Nc=a.Nc; c.Ns=a.Ns;
+		c.xMin=a.xMin; c.xMax=a.xMax; c.densityBinWidth=a.doseBinWidth;
+		c.t0Frames=a.t0Frames; c.t0MinPhys=a.t0MinPhys;
+		c.concEdges=a.concEdges; c.tailTrim=a.tailTrim;
+		c.tMaxLag=a.doseTMaxLag; c.nLogPoints=a.doseNLog;
+		computeMSDDose(c, a.out.empty()?"msd_dose":a.out);
+	}
+};
+inline const Register<MSDDoseAnalysis> reg_msddose{"msddose"};
+
+
 
 inline const Register<GyrAnalysis> reg_gyr{"gyr"};
 

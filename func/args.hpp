@@ -67,6 +67,14 @@ struct Args {
     double frontBuffer{2.0};
     double tMax       {300.0};
     int    nLogPoints {40};
+    // MSD dose-response (msddose)
+    double t0MinPhys    {20000.0};
+    std::vector<int>    t0Frames;
+    std::vector<double> concEdges;
+    int    tailTrim      {10};
+    double doseBinWidth  {0.25};
+    double doseTMaxLag   {30000.0};
+    int    doseNLog      {15};
 
 };
 
@@ -132,6 +140,26 @@ Args parseArgs(int argc, char** argv) {
         else if (f=="--cbuffer") a.cBuffer  = std::stod(nextArg(i,argc,argv,f));
         else if (f=="--minbin")  a.minBin   = std::stoi(nextArg(i,argc,argv,f));
         else if (f=="--maxbin")  a.maxBin   = std::stoi(nextArg(i,argc,argv,f));
+        else if (f=="--t0frames") {
+            std::string list = nextArg(i,argc,argv,f);
+            std::stringstream ss(list);
+            std::string tok;
+            while (std::getline(ss, tok, ',')) a.t0Frames.push_back(std::stoi(tok));
+        }
+        else if (f=="--t0min")     a.t0MinPhys   = std::stod(nextArg(i,argc,argv,f));
+        else if (f=="--concbins") {
+            std::string list = nextArg(i,argc,argv,f);
+            std::stringstream ss(list);
+            std::string tok;
+            while (std::getline(ss, tok, ',')) a.concEdges.push_back(std::stod(tok));
+            while (std::getline(ss, tok, ',')) a.concEdges.push_back(std::stod(tok));
+        }
+        else if (f=="--tailtrim")  a.tailTrim    = std::stoi(nextArg(i,argc,argv,f));
+        else if (f=="--dosebinw")  a.doseBinWidth= std::stod(nextArg(i,argc,argv,f));
+        else if (f=="--dosebinw")  a.doseBinWidth= std::stod(nextArg(i,argc,argv,f));
+        else if (f=="--dosetmax")  a.doseTMaxLag = std::stod(nextArg(i,argc,argv,f));
+        else if (f=="--dosenlog")  a.doseNLog    = std::stoi(nextArg(i,argc,argv,f));
+        else if (f=="--dosenlog")  a.doseNLog    = std::stoi(nextArg(i,argc,argv,f));
         else throw std::invalid_argument("Unknown option: " + f + "\nRun --help.");
     }
     return a;
